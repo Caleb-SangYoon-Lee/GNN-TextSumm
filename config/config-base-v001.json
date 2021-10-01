@@ -36,6 +36,7 @@
   "learning_rate": 5e-5,
   "n_graph_layer": 2,
   "d_graph_layer": 1536,
+  "positional_encoder_in_gnn": true,
   "n_FC_layer": 2,
   "d_FC_layer": 1536,
   "initial_mu": 4.0,

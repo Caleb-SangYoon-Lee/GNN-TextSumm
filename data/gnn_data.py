@@ -104,11 +104,11 @@ class GNN_Dataset(Dataset):
     def get_sent_dists(self, n_max_sent_dist):
         sent_dists = np.zeros(n_max_sent_dist)
 
-        m = 1.0
-        s = 8.0
+        m = 100.0
+        s = 50.0
 
         for i in range(n_max_sent_dist):
-            sent_dists[i] = normal_dist(-i, m, s) * 100
+            sent_dists[i] = normal_dist(n_max_sent_dist - i, m, s) * 1e16
             pass
         return sent_dists
 

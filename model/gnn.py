@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import logging
 
 from misc import whoami
+from .transformer import PositionalEncoder
 
 
 logger = logging.getLogger(__name__)
@@ -74,13 +75,24 @@ class GNN_Encoder(nn.Module):
         self.word_embeddings = config.lm.embeddings.word_embeddings # <class 'torch.nn.modules.sparse.Embedding'>
         self.word_embedding_dim = self.word_embeddings.embedding_dim
 
+        self.dropout_rate = config.dropout_rate
+
+        if config.positional_encoder_in_gnn:
+            d_model = self.word_embedding_dim
+            max_seq_len = int(1.5 * (config.MAX_TEXT_TOKENS+config.MAX_SENTS))
+            self.pe = PositionalEncoder(self.device, d_model, max_seq_len=max_seq_len, dropout=self.dropout_rate)
+            logger.info(f'{fnm}: config.positional_encoder_in_gnn:{config.positional_encoder_in_gnn} with d_model:{d_model}, max_seq_len:{max_seq_len}')
+            pass
+        else:
+            self.pe = None
+            logger.info(f'{fnm}: config.positional_encoder_in_gnn:{config.positional_encoder_in_gnn}')
+            pass
+
         n_graph_layer = config.n_graph_layer  # Graph-Convolution 횟수 (GNN 층의 개수: default: 4)
         d_graph_layer = config.d_graph_layer  # 각 GNN 층의 feature 크기
 
         n_FC_layer = config.n_FC_layer
         d_FC_layer = config.d_FC_layer
-
-        self.dropout_rate = config.dropout_rate
 
         logger.info(f'{fnm}: n_graph_layer:{n_graph_layer}, d_graph_layer:{d_graph_layer}, d_FC_layer:{d_FC_layer}, dropout_rate:{self.dropout_rate}')
 
@@ -143,6 +155,11 @@ class GNN_Encoder(nn.Module):
 
         T = self.word_embeddings(T)
         B = self.word_embeddings(B)
+
+        if self.pe:
+            T = self.pe(T)
+            B = self.pe(B)
+            pass
 
         batch_size  = T.size(0)
         n_max_ids   = T.size(1)
