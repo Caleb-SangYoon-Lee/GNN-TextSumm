@@ -11,13 +11,13 @@ import logging
 
 import matplotlib.pyplot as plt
 
-from pykospacing import Spacing
+#from pykospacing import Spacing
 from kss import split_sentences
 
 from misc import whoami, run_scandir, run_scandir_re
 from misc import init_logger, set_seed, load_config
 
-from data import get_data_from_ai_hub, MAX_SUMM_TOKENS
+from data import get_data_from_ai_hub
 
 
 logger = logging.getLogger(__name__)
@@ -69,6 +69,7 @@ def main():
     max_sent_in_text = 0
     max_sent_in_summ = 0
 
+    MAX_SUMM_TOKENS = config.MAX_SUMM_TOKENS
 
     text_token_len_list = list()
     summ_token_len_list = list()
@@ -76,7 +77,7 @@ def main():
     n_long_article = 0
     n_null_article_skipped = 0 # 2021-09-07: added
 
-    spacer = Spacing()
+    #spacer = Spacing()
 
     sent_token_len_list = list()
     sent_len_list = list()
