@@ -241,7 +241,7 @@ def train_model(config, model, train_dataset, test_dataset=None):
         pass
 
     torch.save(config, os.path.join(model_dir, 'config.bin'))
-    logger.info(f'config saved model to {model_path}')
+    logger.info(f'config saved model to {model_dir}')
 
     global_step = 0
     tr_loss = 0.0
