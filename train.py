@@ -240,6 +240,9 @@ def train_model(config, model, train_dataset, test_dataset=None):
         os.makedirs(model_dir)
         pass
 
+    torch.save(config, os.path.join(model_dir, 'config.bin'))
+    logger.info(f'config saved model to {model_path}')
+
     global_step = 0
     tr_loss = 0.0
 
@@ -312,9 +315,6 @@ def train_model(config, model, train_dataset, test_dataset=None):
                     torch.save(model.state_dict(), model_path)
                     logger.info(f'model saved to {model_path}')
 
-                    torch.save(config, os.path.join(model_dir, 'config.bin'))
-                    logger.info(f'config saved model to {model_path}')
-
                     if config.save_optimizer:
                         torch.save(optimizer.state_dict(), os.path.join(model_dir, 'optimizer.pt'))
                         torch.save(scheduler.state_dict(), os.path.join(model_dir, 'scheduler.pt'))
@@ -331,6 +331,22 @@ def train_model(config, model, train_dataset, test_dataset=None):
 
             pass # end of for step, batch in ...
         pass # end of for epoch in ...
+
+    # final evaluation
+    evaluate(config, model, test_dataloader, 'test', global_step)
+
+    # Save model checkpoint
+    model_path = os.path.join(model_dir, f'model-{global_step:0>5}.pth')
+
+    torch.save(model.state_dict(), model_path)
+    logger.info(f'model saved to {model_path}')
+
+    if config.save_optimizer:
+        torch.save(optimizer.state_dict(), os.path.join(model_dir, 'optimizer.pt'))
+        torch.save(scheduler.state_dict(), os.path.join(model_dir, 'scheduler.pt'))
+
+        logger.info(f'optimizer and scheduler states to {model_dir}')
+        pass
 
     return global_step, tr_loss
             
