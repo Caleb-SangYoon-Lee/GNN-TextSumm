@@ -239,7 +239,12 @@ class Encoder(nn.Module):
         logger.info(f'{fnm}: N:{N} / vocab_size:{vocab_size} / d_model:{d_model} / n_heads:{n_heads}')
 
         self.N = N   # number of EncoderLayer
-        #self.embed = Embedder(vocab_size, d_model)  # embedding은 bert embedding 사용
+        if config.tns_only:
+            self.embed = nn.Embedding(vocab_size, d_model)
+            pass
+        else:
+            self.embed = None  # embedding은 bert embedding 사용
+            pass
 
         self.pe = PositionalEncoder(config.device, d_model, max_seq_len=int(1.5 * (config.MAX_TEXT_TOKENS+config.MAX_SENTS)), dropout=dropout)
 
@@ -248,10 +253,17 @@ class Encoder(nn.Module):
         self.norm = Norm(d_model)
 
         logger.info(f'{fnm}: Transformer Encoder created')
+        pass
 
     def forward(self, src, mask):
-        #x = self.embed(src)
-        x = self.pe(src)
+        if self.embed:
+            x = self.embed(src)
+            pass
+        else:
+            x = src
+            pass
+
+        x = self.pe(x)
         for i in range(self.N):
             x = self.layers[i](x, mask)
             pass

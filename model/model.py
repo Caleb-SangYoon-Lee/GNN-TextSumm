@@ -22,7 +22,12 @@ class GNN_Transformer(nn.Module):
         vocab_size = config.lm.embeddings.word_embeddings.num_embeddings
         d_model = config.lm.embeddings.word_embeddings.embedding_dim
 
-        self.gnn_encoder = GNN_Encoder(config) # 1st encoder: GNN Encoder
+        if not config.tns_only:
+            self.gnn_encoder = GNN_Encoder(config) # 1st encoder: GNN Encoder
+            pass
+        else:
+            self.gnn_encoder = None # 1st encoder: GNN Encoder
+            pass
 
         if config.use_transformer_encoder:
             self.tns_encoder = Encoder(config)     # 2nd encoder: Transformer Encoder
@@ -31,28 +36,26 @@ class GNN_Transformer(nn.Module):
             self.tns_encoder = None
             pass
 
-        #self.decoder = Decoder(trg_vocab_size, d_model, N, n_heads, dropout)
         self.tns_decoder = Decoder(config)     # deocoder   : Transformer Decoder
         self.out = nn.Linear(d_model, vocab_size)
         pass
 
     def forward(self, *batch):
-        T, TN, B, BN, HM, S_, SM, V, A1, A2 = batch
-
-        g_outputs = self.gnn_encoder(T, TN, B, BN, V, A1, A2)
-        #logger.info(f'{__class__.__name__}.forward: g_outputf.size:{g_outputs.size()}')
-        if self.tns_encoder:
-            e_outputs = self.tns_encoder(g_outputs, HM)
-            #logger.info(f'{__class__.__name__}.forward: e_outputf.size:{e_outputs.size()}')
+        if self.gnn_encoder:
+            T, TN, B, BN, HM, S_, SM, V, A1, A2 = batch
+            outputs = self.gnn_encoder(T, TN, B, BN, V, A1, A2)
+            if self.tns_encoder:
+                outputs = self.tns_encoder(outputs, HM)
+                pass
             pass
         else:
-            e_outputs = g_outputs
+            T, TN, HM, S_, SM, V = batch
+            outputs = self.tns_encoder(T, HM)
             pass
 
-        d_outputs = self.tns_decoder(S_, e_outputs, HM, SM)
-        #logger.info(f'{__class__.__name__}.forward: d_outputf.size:{d_outputs.size()}')
-        output = self.out(d_outputs)
-        return output
+        outputs = self.tns_decoder(S_, outputs, HM, SM)
+        outputs = self.out(outputs)
+        return outputs
 
     #def get_word_embedding(self, word):
     #    return self.gnn_encoder.get_word_embedding(word)

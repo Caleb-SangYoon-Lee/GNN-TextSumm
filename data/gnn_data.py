@@ -222,8 +222,104 @@ class GNN_Dataset(Dataset):
     pass
 
 
+class TNS_Dataset(Dataset):
+    def __init__(self, config, mode, data):
+        fnm = f'{__class__.__name__}.{whoami()}'
+        self.mode = mode
+        self.text_list = data['text']
+        self.summ_list = data['summ']
+        self.n_data = len(self.text_list)
 
-class Collator:
+        logger.info(f'{fnm}: mode:{mode}: n_data({self.n_data}) are available')
+
+        self.pad_token_id = config.tokenizer.pad_token_id
+        self.sep_token_id = config.tokenizer.sep_token_id
+
+        self.MAX_TEXT_TOKENS = config.MAX_TEXT_TOKENS
+        self.MAX_SUMM_TOKENS = config.MAX_SUMM_TOKENS
+        self.MAX_SENTS = config.MAX_SENTS
+        pass
+
+    def __len__(self):
+        return self.n_data
+
+    def restrain_text_ids(self, text_ids, n_sents):
+        ids_len_list = list()
+        ids_list = list()
+
+        MAX_TEXT_TOKENS = self.MAX_TEXT_TOKENS
+        MAX_SENTS = self.MAX_SENTS
+
+        for i, ids in enumerate(text_ids):
+            if (MAX_TEXT_TOKENS + MAX_SENTS) <= len(ids_len_list) + len(ids_list):
+                break
+
+            n_ids_curr = len(ids_list)
+            n_ids = len(ids)
+
+            if i < n_sents - 1:
+                if MAX_TEXT_TOKENS <= n_ids_curr + 1:
+                    break
+                ids += [self.sep_token_id]
+                n_ids += 1
+                pass
+
+            if MAX_TEXT_TOKENS < n_ids_curr + n_ids:
+                n_clipped = n_ids_curr + n_ids - MAX_TEXT_TOKENS
+                if 0 < n_clipped:
+                    ids = ids[:-n_clipped]
+
+                    ids_len_list.append(len(ids))
+                    ids_list.extend(ids)
+                    break
+                pass
+            else:
+                ids_len_list.append(len(ids))
+                ids_list.extend(ids)
+                pass
+            pass
+        return ids_len_list, ids_list
+
+
+    def __getitem__(self, index):
+        #pdb.set_trace()
+
+        text_ids = self.text_list[index]
+        summ_ids = self.summ_list[index]
+
+        n_sents = len(text_ids)
+
+        MAX_SUMM_TOKENS = self.MAX_SUMM_TOKENS
+
+        ids_len_list, ids_list = self.restrain_text_ids(text_ids, n_sents)
+
+        n_ids = len(ids_list) # total ids for the text
+
+        n_summ = len(summ_ids)
+        if MAX_SUMM_TOKENS < n_summ:
+            summ_ids = summ_ids[:MAX_SUMM_TOKENS]
+            pass
+
+        # prepare text related graph
+        n1 = n_ids
+        c1 = ids_list
+
+        # node indice for aggregation
+        valid = np.zeros((n1,))
+        valid[:n1] = 1
+
+        text_dict = {
+                'T' : c1,
+                'TN': n_ids,
+                'V' : valid,
+                'S' : summ_ids,
+                }
+        return text_dict
+    pass
+
+
+
+class GNN_Collator:
     def __init__(self, config):
         self.MAX_SUMM_TOKENS = config.MAX_SUMM_TOKENS
         pass
@@ -298,6 +394,63 @@ class Collator:
         A2 = torch.from_numpy(A2).float()
 
         return T, TN, B, BN, V, S, A1, A2
+    pass
+
+
+class TNS_Collator:
+    def __init__(self, config):
+        self.MAX_SUMM_TOKENS = config.MAX_SUMM_TOKENS
+        pass
+
+    def __call__(self, batch):
+        #pdb.set_trace()
+
+        MAX_SUMM_TOKENS = self.MAX_SUMM_TOKENS
+
+        max_ids  = max([data['TN'] for data in batch if data is not None])
+        max_elm  = max_ids
+
+        max_summ = max([len(data['S']) for data in batch if data is not None])
+
+        n_batch = len(batch)
+
+        T  = np.zeros((n_batch, max_ids ), dtype=np.int) # texts
+        TN = np.zeros((n_batch, ), dtype=np.int)
+
+        V  = np.zeros((n_batch, max_elm))
+
+        S  = np.zeros((n_batch, MAX_SUMM_TOKENS), dtype=np.int)  # summaries
+        SM = np.zeros((n_batch, max_summ), dtype=np.int)
+
+        for i in range(n_batch):
+            data = batch[i]
+
+            # process text ids
+            ids = data['T']
+            n_ids = data['TN']
+
+            T [i,:n_ids] = np.array(ids, np.int)
+            TN[i] = n_ids
+
+            n_elm = n_ids
+
+            V[i,:n_elm] = batch[i]['V']
+
+            # process summ. ids
+            summ = data['S']
+            n_summ = len(summ)
+
+            S [i,:n_summ] = np.array(summ, np.int)
+            SM[i,:n_summ - 1] = 1 # valid mask of summary (last appended sep excluded)
+
+            pass
+
+        T  = torch.from_numpy(T)
+        V = torch.from_numpy(V).float()
+
+        S  = torch.from_numpy(S)
+
+        return T, TN, V, S
     pass
 
 

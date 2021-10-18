@@ -22,7 +22,7 @@ from torch.utils.data import TensorDataset, DataLoader, RandomSampler, Sequentia
 from misc import whoami, run_scandir, run_scandir_re
 from misc import init_logger, set_seed, load_config, get_gpu
 
-from data import GNN_Dataset, BatchSampler, Collator, create_masks
+from data import GNN_Dataset, TNS_Dataset, BatchSampler, GNN_Collator, TNS_Collator, create_masks
 from model import get_model
 
 
@@ -100,26 +100,47 @@ def evaluate(config, model, dataloader, mode, global_step=None):
 
         # this where evaluation step goes
         with torch.no_grad():
-            T, TN, B, BN, V, S, A1, A2 = batch
+            if config.tns_only:
+                T, TN, V, S = batch
+                pass
+            else:
+                T, TN, B, BN, V, S, A1, A2 = batch
+
+                # text mask
+                H = torch.cat([T, B], 1)
+                pass
 
             # text mask
-            H = torch.cat([T, B], 1)
             S_ = S[:,:-1]
 
-            HM, SM = create_masks(H, S_, config.pad_token_id)
+            if config.tns_only:
+                HM, SM = create_masks(T, S_, config.pad_token_id)
+                pass
+            else:
+                HM, SM = create_masks(H, S_, config.pad_token_id)
+                pass
 
             if not no_cuda:
                 T = T.to(device)
-                B = B.to(device)
                 HM = HM.to(device)
                 S_ = S_.to(device)
                 SM = SM.to(device)
                 V = V.to(device)
-                A1 = A1.to(device)
-                A2 = A2.to(device)
+
+                if not config.tns_only:
+                    B = B.to(device)
+                    A1 = A1.to(device)
+                    A2 = A2.to(device)
+                    pass
                 pass
 
-            preds = model(T, TN, B, BN, HM, S_, SM, V, A1, A2)
+            if config.tns_only:
+                preds = model(T, TN, HM, S_, SM, V)
+                pass
+            else:
+                preds = model(T, TN, B, BN, HM, S_, SM, V, A1, A2)
+                pass
+
             ys = S[:, 1:].contiguous().view(-1)
             if not no_cuda:
                 ys = ys.to(device)
@@ -149,10 +170,12 @@ def get_model_dir(config):
 def train_model(config, model, train_dataset, test_dataset=None):
     fnm = whoami()
 
+    collator = TNS_Collator(config) if config.tns_only else GNN_Collator(config)
+
     train_dataloader = DataLoader(train_dataset, \
                                   batch_size=config.train_batch_size, \
                                   num_workers=config.n_workers_for_dataloader, \
-                                  collate_fn=Collator(config), \
+                                  collate_fn=collator, \
                                   sampler=BatchSampler(config.train_batch_size, len(train_dataset)))
     logger.info(f'{fnm}: train data loader generated')
 
@@ -160,7 +183,7 @@ def train_model(config, model, train_dataset, test_dataset=None):
     test_dataloader = DataLoader(test_dataset, \
                                  batch_size=config.eval_batch_size, \
                                  num_workers=config.n_workers_for_dataloader, \
-                                 collate_fn=Collator(config), \
+                                 collate_fn=collator, \
                                  sampler=test_sampler )
     logger.info(f'{fnm}: test data loader generated')
 
@@ -255,26 +278,46 @@ def train_model(config, model, train_dataset, test_dataset=None):
             model.train()
 
             # this where training step goes
-            T, TN, B, BN, V, S, A1, A2 = batch
+            if config.tns_only:
+                T, TN, V, S = batch
+                pass
+            else:
+                T, TN, B, BN, V, S, A1, A2 = batch
+
+                # text mask
+                H = torch.cat([T, B], 1)
+                pass
 
             # text mask
-            H = torch.cat([T, B], 1)
             S_ = S[:,:-1]
 
-            HM, SM = create_masks(H, S_, config.pad_token_id)
+            if config.tns_only:
+                HM, SM = create_masks(T, S_, config.pad_token_id)
+                pass
+            else:
+                HM, SM = create_masks(H, S_, config.pad_token_id)
+                pass
 
             if not no_cuda:
                 T = T.to(device)
-                B = B.to(device)
                 HM = HM.to(device)
                 S_ = S_.to(device)
                 SM = SM.to(device)
                 V = V.to(device)
-                A1 = A1.to(device)
-                A2 = A2.to(device)
+
+                if not config.tns_only:
+                    B = B.to(device)
+                    A1 = A1.to(device)
+                    A2 = A2.to(device)
+                    pass
                 pass
 
-            preds = model(T, TN, B, BN, HM, S_, SM, V, A1, A2)
+            if config.tns_only:
+                preds = model(T, TN, HM, S_, SM, V)
+                pass
+            else:
+                preds = model(T, TN, B, BN, HM, S_, SM, V, A1, A2)
+                pass
 
             ys = S[:, 1:].contiguous().view(-1)
 
@@ -373,6 +416,10 @@ def main():
     config = load_config(config_file_path)
 
     logger.info(f'{fnm}: config:\n{config}')
+
+    if not config.use_transformer_encoder and config.tns_only:
+        logger.info(f'{fnm}: config.use_transformer_encoder:{config.use_transformer_encoder} and config.tns_only:{config.tns_only} conflicted..')
+        return
 
     set_seed(config)
     logger.info(f'{fnm}: set_seed() done')

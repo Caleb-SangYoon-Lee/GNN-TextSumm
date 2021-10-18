@@ -42,9 +42,11 @@
   "initial_mu": 4.0,
   "initial_dev": 1.0,
   "dropout_rate" : 0.1,
-  "n_tns_layers" : 6,
+  "n_tns_layers" : 3,
   "n_heads" : 8,
   "use_transformer_encoder" : false,
+  "tns_only" : true,
+  "tns_only_d_model": 512,
 
   "MAX_TEXT_TOKENS": 1000,
   "MAX_SUMM_TOKENS": 200,

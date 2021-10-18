@@ -11,3 +11,9 @@ Data and model directory locatioins are specified in configuratoin file such as 
 To train model you can run shell script as follows
 
   $ ./train.sh
+
+You can modify config. file as follows to train with pure transformer to compare with GNN encoder.
+ - "use_transformer_encoder" : true,
+ - "tns_only" : true,
+ - "tns_only_d_model": 512,
+
