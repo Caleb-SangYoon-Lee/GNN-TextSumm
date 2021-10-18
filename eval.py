@@ -117,9 +117,15 @@ def eval_model(config, model, test_dataset):
 
     pad_token_id = config.pad_token_id
 
-    rouge_list = list()
+    #
+    # precision: bleu
+    # recall   : rouge
+    # F1       : F1 score of blue and rouge
+    #           (alpah: 0.5 --> Rouge-L-F: F1 score)
+    #
+    n_grams = [5, 9]
+    rouge_info = {n_gram:{'m':Rouge(variants=['L', n_gram], multiref='best', alpha=0.5), 'hist':list()} for n_gram in n_grams}
 
-    m = Rouge(variants=['L', 9], multiref='best', alpha=0.5) # alpah: 0.5 --> Rouge-L-F: F1 score
     n_data = len(test_dataset)
 
     for step, batch in enumerate(test_dataloader):
@@ -189,23 +195,35 @@ def eval_model(config, model, test_dataset):
         ys_tokens = config.tokenizer.convert_ids_to_tokens(ys)
         ys_sent = config.tokenizer.convert_tokens_to_string(ys_tokens)
 
-        m.update((pred_tokens, ys_tokens))
+        for n_gram, hist_info in rouge_info.items():
+            m = hist_info['m']
 
-        rouge = m.compute()
+            m.update((pred_tokens, ys_tokens))
+            rouge = m.compute()
 
-        rouge_list.append(rouge)
+            hist = hist_info['hist']
+            hist.append(rouge)
+            pass
 
-        if (step + 1) % 100 == 0:
-            n_curr = step + 1
+        n_curr = step + 1
+
+        if n_curr % 100 == 0:
             logger.info(f'{n_curr:>5} / {n_data:>5}: {n_curr * 100. / n_data:5.2f} %')
             pass
 
         pass # end of for step, batch in ...
 
-    df = pd.DataFrame(rouge_list)
 
-    return df
-            
+    df_info = dict()
+
+    for n_gram, hist_info in rouge_info.items():
+        hist = hist_info['hist']
+        df = pd.DataFrame(hist)
+        df_info[n_gram] = df
+        pass
+
+    return df_info
+
 
 def get_dataset(config, mode):
     data_file_path = os.path.join(config.data_dir, f'ids.{mode}.pkl')
@@ -250,15 +268,22 @@ def main():
         logger.info(f'config. file({config_file_path}) not found...')
         return
 
+    device = get_gpu(gpu_id=args.gpu_id, print_gpu_info=True)
+
     with open(config_file_path, 'rb') as f:
-        config = torch.load(f)
+        config = torch.load(f, map_location=device)
         pass
 
     logger.info(f'{fnm}: config:\n{config}')
 
-    if not config.use_transformer_encoder and config.tns_only:
-        logger.info(f'{fnm}: config.use_transformer_encoder:{config.use_transformer_encoder} and config.tns_only:{config.tns_only} conflicted..')
-        return
+    if 'tns_only' in config:
+        if not config.use_transformer_encoder and config.tns_only:
+            logger.info(f'{fnm}: config.use_transformer_encoder:{config.use_transformer_encoder} and config.tns_only:{config.tns_only} conflicted..')
+            return
+        pass
+    else:
+        config.tns_only = False
+        pass
 
     set_seed(config)
     logger.info(f'{fnm}: set_seed() done')
@@ -269,7 +294,7 @@ def main():
         config.device = 'cpu'
         pass
     else:
-        config.device = get_gpu(gpu_id=args.gpu_id, print_gpu_info=True)
+        config.device = device
         pass
 
     logger.info(f'{fnm}: config.no_cuda:{config.no_cuda} / config.device:{config.device}')
@@ -284,24 +309,16 @@ def main():
 
     logger.info(f'{fnm}: nlp_model_type:{nlp_model_type} / nlp_model_path:{nlp_model_path} / do_lower_case:{do_lower_case}')
 
-    tokenizer = ElectraTokenizer.from_pretrained(config.model_name_or_path, do_lower_case=config.do_lower_case)
-    logger.info(f'tokenizer({nlp_model_type}) with {config.model_name_or_path} / {config.do_lower_case} done')
+    if 'tokenizer' not in config:
+        tokenizer = ElectraTokenizer.from_pretrained(config.model_name_or_path, do_lower_case=config.do_lower_case)
+        config.tokenizer = tokenizer
 
-    lm = ElectraModel.from_pretrained(config.model_name_or_path)  # language model for KoELECTRA-Base-v3
-    logger.info(f'{fnm}: language model({config.model_name_or_path}) loaded')
+        config.cls_token_id = tokenizer.cls_token_id
+        config.sep_token_id = tokenizer.sep_token_id
+        config.pad_token_id = tokenizer.pad_token_id
 
-    if not config.no_cuda:
-        lm = lm.to(config.device)
+        logger.info(f'tokenizer({nlp_model_type}) with {config.model_name_or_path} / {config.do_lower_case} done')
         pass
-
-    logger.info(f'{fnm}:#1: lm.embeddings.word_embeddings.training:{lm.embeddings.word_embeddings.training}')
-
-    config.tokenizer = tokenizer
-    config.lm = lm
-
-    config.cls_token_id = tokenizer.cls_token_id
-    config.sep_token_id = tokenizer.sep_token_id
-    config.pad_token_id = tokenizer.pad_token_id
 
     logger.info(f'{fnm}: config.cls_token_id: {config.cls_token_id}')
     logger.info(f'{fnm}: config.sep_token_id: {config.sep_token_id}')
@@ -324,7 +341,8 @@ def main():
         logger.info(f'args.model_name not specified, [{model_path}] used...')
         pass
 
-    model.load_state_dict(torch.load(model_path))
+    model.load_state_dict(torch.load(model_path, map_location=device))
+
     global_step = get_global_step_from_model_file_path(model_path)
 
     logger.info(f'model state loaded from {model_path}, global_step:{global_step}')
@@ -333,15 +351,25 @@ def main():
     logger.info(f'length of test dataset: {len(test_dataset)}')
 
     if config.do_eval:
-        df = eval_model(config, model, test_dataset)
+        df_info = eval_model(config, model, test_dataset)
+
+        if not df_info:
+            logger.info('eval_model() not worked...')
+            return
 
         eval_result_file_name = 'eval-df.bin'
         eval_result_file_path = os.path.join(model_dir, eval_result_file_name)
 
-        torch.save(df, eval_result_file_path)
+        torch.save(df_info, eval_result_file_path)
         logger.info(f'evaluation result saved in [{eval_result_file_path}]')
 
-        logger.info(df.describe())
+        for n_gram, df in df_info.items():
+            logger.info(f'n_gram:{n_gram}\n{df.describe()}')
+            logger.info('-' * 30)
+            last_row = df.iloc[-1]
+            logger.info(f'last row:\n{last_row}')
+            logger.info('-' * 50)
+            pass
         pass
 
     pass
